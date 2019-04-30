@@ -167,10 +167,21 @@ checks:
     
 ``` 
 
+`kube-bench` supports running a subgroup by specifying the subgroup `id` on the
+command line, with the flag `--group`.
+
 ### Check
 
-A `check` (called recommendation in the CIS Kubernetes Benchmark) has 
-an `id`, a `text`, an `audit` , a `tests`,`remediation` and `scored` fields.
+The CIS Kubernetes Benchmark recommend configurations to harden kubernetes 
+components. These recommendations are usually configurations option, and can be 
+specified by flags to the binaries or changes to configuration files used by
+the binaries.
+
+The Benchmark also provides commands to audit a kubernetes installation, 
+identify places where the cluster security can be improved, and steps to 
+remediate the problems.
+
+In `kube-bench`, `check` objects embody these recommendations. 
 
 This an example `check` object:
 ```
@@ -179,16 +190,52 @@ text: "Ensure that the --anonymous-auth argument is set to false (Not Scored)"
 audit: "ps -ef | grep kube-apiserver | grep -v grep"
 tests:
   test_items:
-    - flag: "--anonymous-auth"
-      compare:
-        op: eq
-        value: false
-      set: true
-      remediation: |
-        Edit the API server pod specification file $apiserverconf
-        on the master node and set the below parameter.
-        --anonymous-auth=false
-      scored: false
+  - flag: "--anonymous-auth"
+    compare:
+      op: eq
+      value: false
+    set: true
+remediation: |
+  Edit the API server pod specification file kube-apiserver
+  on the master node and set the below parameter.
+  --anonymous-auth=false
+scored: false
+```
+
+A `check` has an `id`, a `text`, an `audit` , a `tests`,`remediation` and 
+`scored` fields.
+
+`kube-bench` supports running specific checks by specifying the check's `id` on
+the command line with the `--check` flag.
+
+The `audit` field specifies the command to run for a check. The output of this
+command is then evaluated for conformance with the CIS Kubernetes Benchmark.
+
+The criteria the audit is evaluated against is specified in by the `tests`
+object. `tests` comprises `bin_op` and `test_items`.
+
+`test_items` specifies the criteria(s) the audit command's output should meet to
+pass. This criteria includes key words and operations on those keywords. 
+
+Keywords are specified with `flag` for command line flags and `path` for 
+configuration file options.
+```
+tests:
+  test_items:
+  - flag: "--anonymous-auth"
+    compare:
+      op: eq
+      value: false
+    set: true
+```
+```
+tests:
+  test_items:
+  - path: "{.authentication.anonymous.enabled}"
+    compare:
+      op: eq
+      value: false
+    set: true
 ```
 
 ### Checks and tests
