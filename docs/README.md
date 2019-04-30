@@ -1,27 +1,33 @@
 ## Overview
-`kube-bench` runs YAML specifications of the CIS Kubernetes Benchmarks against
+`kube-bench` runs a YAML representation of the CIS Kubernetes Benchmarks against
 a kubernetes cluster.
 
+`kube-bench`
+
+Controls > Groups > Sub-groups > checks
+
+### Controls
+
+
 ## Architecture
-benchmark spec  --> kube-bench <-- configuration files
+controls  --> kube-bench <-- configuration files
                         |
                         v
                      results 
 
-
 ## Benchmark Specification
+
 Benchmark specifications are YAML representation of the CIS Kubernetes Benchmark.
 
-### Structure
-The `kube-bench` benchmark specification is a collection checks in a YAML file
-that are run against a specific type of node in a kubernetes cluster based on
-recommendations in the CIS Kubernetes Benchmark.
+### Controls
 
-The kubernetes node types are the `master` which runs the kubernetes contol 
-plane components such as the apiserver, controller-manager and scheduler, and 
-the `node` which workloads scheduled on.
+`controls` is a YAML document that contains checks that must be run on a 
+specific kubernetes node type, a kubernetes master or a kubernetes node.
 
-The following is a basic `kube-bench` benchmark spec:
+`controls` is the fundamental input to kube-bench.
+
+The following is an example of a `controls` document:
+
 ```yaml
 ---
 controls:
@@ -45,25 +51,126 @@ groups:
       remediation: "Edit the /etc/kubernetes/config file on the master node and
         set the KUBE_ALLOW_PRIV parameter to '--allow-privileged=false'"
       scored: true
+- id: 1.2
+  text: Scheduler
+  checks:
+    - id: 1.2.1
+      text: "Ensure that the --profiling argument is set to false (Scored)"
+      audit: "ps -ef | grep kube-scheduler | grep -v grep"
+      tests:
+        bin_op: or
+        test_items:
+          - flag: "--profiling"
+            set: true
+          - flag: "--some-other-flag"
+            set: false
+      remediation: "Edit the /etc/kubernetes/config file on the master node and
+        set the KUBE_ALLOW_PRIV parameter to '--allow-privileged=false'"
+      scored: true
 ```
 
-From the basic benchmark spec above, you can see that the YAML document has an
-id, a text, a type and a groups field.
+`controls` is composed of a hierachy of groups, sub-groups and checks. Each of
+the components including the `controls` itself has metadata; an id and a text 
+description which are displayed in the output of `kube-bench`.
 
-The id field is the top-level group for all checks in this spec. This id is
-serves an information and organization purpose. It is displayed in the output
-of kube-bench.
+`type` specifies what kubernetes node type this `controls` is for. Possible 
+values are `master` and `node`.
 
-The text field describes the purpose of the benchmark and all checks in it.
-This field is also displayed in the kube-bench output.
+kube-bench automatically selects which `controls` to use based on the detected
+node type and the version of kubernetes a cluster is running.
 
-The type field 
+This behaviour can be overridden by specifying the `master` or `node` subcommand
+and the `--version` flag on the command line.
 
-A `check` (recommendation in the CIS Kubernetes Benchmark) is made up of an id,
-description, commands to audit the cluster , tests against the output of these 
-commands to determine if a cluster passed or failed the check, remediation, 
-steps to remediate a failed check and finally a scored field that indicates if a
-check is used in calculating a [CIS Benchmark Score](http://citation.needed).
+For example:
+run kube-bench against a master node using the auto-detected version `controls`:
+```shell
+kube-bench master
+```
+
+or run kube-bench against a node using the node `controls` for kubernetes 
+version 1.12:
+```shell
+kube-bench node --version 1.12
+```
+
+`controls` for the various versions of kubernetes can be found under the `cfg`
+directory in directories with same name as the kubernetes versions. For example
+`cfg/1.12`.
+
+`controls` are also organized by distribution under the `cfg` directory for
+example `cfg/ocp-3.10`.
+
+### Groups
+
+`groups`is made up of subgroups which test various aspects of the node type. 
+For example one subgroup checks parameters passed to the apiserver binary, while 
+another subgroup checks parameters passed to the controller-manager binary.
+
+```
+groups:
+- id: 1.1
+  text: API Server
+  checks:
+    - id: 1.1.1
+      text: "Ensure that the --allow-privileged argument is set (Scored)"
+      audit: "ps -ef | grep kube-apiserver | grep -v grep"
+      tests:
+        bin_op: or
+        test_items:
+          - flag: "--allow-privileged"
+            set: true
+          - flag: "--some-other-flag"
+            set: false
+      remediation: "Edit the /etc/kubernetes/config file on the master node and
+        set the KUBE_ALLOW_PRIV parameter to '--allow-privileged=false'"
+      scored: true
+- id: 1.2
+  text: Scheduler
+  checks:
+    - id: 1.2.1
+      text: "Ensure that the --profiling argument is set to false (Scored)"
+      audit: "ps -ef | grep kube-scheduler | grep -v grep"
+      tests:
+        bin_op: or
+        test_items:
+          - flag: "--profiling"
+            set: true
+          - flag: "--some-other-flag"
+            set: false
+      remediation: "Edit the /etc/kubernetes/config file on the master node and
+        set the KUBE_ALLOW_PRIV parameter to '--allow-privileged=false'"
+      scored: true
+      
+```
+
+These subgroups have `id`, `text` fields which serve the same purposes described
+in the previous paragraphs. The most important part of the subgroup is the
+`checks` field which is the collection of actual `check`s that form the subgroup.
+
+This is an example of a subgroup.
+
+```yaml
+id: 1.1
+text: API Server
+checks:
+  - id: 1.1.1
+    text: "Ensure that the --allow-privileged argument is set (Scored)"
+    audit: "ps -ef | grep kube-apiserver | grep -v grep"
+    tests:
+    ...
+  - id: 1.1.2
+    text: "Ensure that the --anonymous-auth argument is set to false (Not Scored)"
+    audit: "ps -ef | grep kube-apiserver | grep -v grep"
+    tests:
+    ...
+    
+``` 
+
+### Check
+
+A `check` (called recommendation in the CIS Kubernetes Benchmark) has 
+an `id`, a `text`, an `audit` , a `tests`,`remediation` and `scored` fields.
 
 This an example `check` object:
 ```
@@ -84,41 +191,10 @@ tests:
       scored: false
 ```
 
-A `group` comprises an id, a description and a list of checks which are run 
-against the same kubernetes node type and target a specific component which runs
-on that node type.
-
-```yaml
-id: 1.1
-text: API Server
-checks:
-  - id: 1.1.1
-    text: "Ensure that the --allow-privileged argument is set (Scored)"
-    audit: "ps -ef | grep kube-apiserver | grep -v grep"
-    tests:
-    ...
-  - id: 1.1.2
-    text: "Ensure that the --anonymous-auth argument is set to false (Not Scored)"
-    audit: "ps -ef | grep kube-apiserver | grep -v grep"
-    tests:
-    ...
-    
-```
-
-For example, the group 1.1 is a collection of checks for the kube-apiserver that
-runs on the kubernetes master. Also the group 1.2 is a collection of checks for
-scheduler which runs on the kubernetes master as well.
-
-In `kube-bench` all `group`s which run `check`s against the same kubernetes node
-type, for example the kubernetes master are grouped into the same file.
-This file is the benchmark spec and is named for the node type
-
-For example all kubernetes 1.13 master checks for are in the directory 
-`cfg/1.13/master.yaml` and all the node checks for the same version are in the
-file `cfg/1.13/node.yaml`.
-
 ### Checks and tests
-Tests are the items we actually look for to determine if a check is successful or not. Checks can have multiple tests, which must all be successful for the check to pass.
+Tests are the items we actually look for to determine if a check is successful 
+or not. Checks can have multiple tests, which must all be successful for the 
+check to pass.
 
 The syntax for tests:
 ```
@@ -130,7 +206,8 @@ tests:
     value:
 ...
 ```
-Tests have various `operations` which are used to compare the output of audit commands for success.
+Tests have various `operations` which are used to compare the output of audit 
+commands for success.
 These operations are:
 
 - `eq`: tests if the flag value is equal to the compared value.
