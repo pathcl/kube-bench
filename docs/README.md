@@ -26,7 +26,7 @@ specific kubernetes node type, a kubernetes master or a kubernetes node.
 
 `controls` is the fundamental input to kube-bench.
 
-The following is an example of a `controls` document:
+The following is an example of a basic `controls` document:
 
 ```yaml
 ---
@@ -214,57 +214,83 @@ command is then evaluated for conformance with the CIS Kubernetes Benchmark.
 The criteria the audit is evaluated against is specified in by the `tests`
 object. `tests` comprises `bin_op` and `test_items`.
 
-`test_items` specifies the criteria(s) the audit command's output should meet to
-pass. This criteria includes key words and operations on those keywords. 
+`test_items` specify the criteria(s) the `audit` command's output should meet to
+pass a check. This criteria is made up of keywords extracted from the output of
+the `audit` commands and operations that compare the these keywords against
+values expected by the CIS Kubernetes Benchmark. 
 
-Keywords are specified with `flag` for command line flags and `path` for 
-configuration file options.
+The are two ways to extract keywords from the output of the `audit` command,
+`flag` and `path`.
+
+`flag` is used when the keyword is a command line flag. The associated `audit`
+command is usually a `ps` command and a `grep` for the binary whose flag we are
+checking:
+
 ```
+ps -ef | grep somebinary | grep -v grep
+``` 
+
+Here is an example usage of the `flag` option:
+```
+...
+audit: "ps -ef | grep kube-apiserver | grep -v grep"
 tests:
   test_items:
   - flag: "--anonymous-auth"
-    compare:
-      op: eq
-      value: false
-    set: true
+  ...
+
 ```
+
+`path` is used when the keyword is an option set in a JSON or YAML config file.
+The associated `audit` command is usually `cat /path/to/config-yaml-or-json`.
+For example:
+
 ```
+...
+
+text: "Ensure that the --anonymous-auth argument is set to false (Not Scored)"
+audit: "cat /path/to/some/config"
 tests:
   test_items:
-  - path: "{.authentication.anonymous.enabled}"
-    compare:
-      op: eq
-      value: false
-    set: true
+  - path: "{.someoption.value}"
+
+    ...
 ```
 
-### Checks and tests
-Tests are the items we actually look for to determine if a check is successful 
-or not. Checks can have multiple tests, which must all be successful for the 
-check to pass.
 
-The syntax for tests:
+
+`compare` dictates the criteria that the kewords extracted from the output of
+`audit` by `flag` or `path` must meet to pass a check. `compare` has two fields,
+`op` and `value`.
+
+`op` compares the actual keyword we got with `flag` or `path` to an expected
+`value` according to the CIS Kubernetes Benchmark. If the the result of the
+comparison is true, the check `PASS`es, if it is false, the check `FAIL`s.
+
+The `op`erations currently supported by `kube-bench` are:
+- `eq`: tests if the keyword is equal to the compared value.
+- `noteq`: tests if the keyword is unequal to the compared value.
+- `gt`: tests if the keyword is greater than the compared value.
+- `gte`: tests if the keyword is greater than or equal to the compared value.
+- `lt`: tests if the keyword is less than the compared value.
+- `lte`: tests if the keyword is less than or equal to the compared value.
+- `has`: tests if the keyword contains the compared value.
+- `nothave`: tests if the keyword does not contain the compared value.
+
+Below is an example with comparison.
+
 ```
+id: 1.1.1
+text: "Ensure that the --anonymous-auth argument is set to false (Not Scored)"
+audit: "ps -ef | grep kube-apiserver | grep -v grep"
 tests:
-- flag:
-  set:
-  compare:
-    op:
-    value:
-...
+  test_items:
+  - flag: "--anonymous-auth" # check the output of ps for this flag
+    compare:
+      op: eq                 # the value of the flag must be equal to 
+      value: false           # false.
+scored: false
 ```
-Tests have various `operations` which are used to compare the output of audit 
-commands for success.
-These operations are:
-
-- `eq`: tests if the flag value is equal to the compared value.
-- `noteq`: tests if the flag value is unequal to the compared value.
-- `gt`: tests if the flag value is greater than the compared value.
-- `gte`: tests if the flag value is greater than or equal to the compared value.
-- `lt`: tests if the flag value is less than the compared value.
-- `lte`: tests if the flag value is less than or equal to the compared value.
-- `has`: tests if the flag value contains the compared value.
-- `nothave`: tests if the flag value does not contain the compared value.
 
 
 ### Variables
