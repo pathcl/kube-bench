@@ -151,6 +151,7 @@ func getConfigFilePath(specifiedVersion string, runningVersion string, filename 
 func decrementVersion(version string) string {
 	split := strings.Split(version, ".")
 	minor, err := strconv.Atoi(split[1])
+	fmt.Println("decrementVersion()")
 	if err != nil {
 		return ""
 	}
