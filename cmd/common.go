@@ -65,6 +65,12 @@ func NewRunFilter(opts FilterOpts) (check.Predicate, error) {
 func runChecks(nodetype check.NodeType) {
 	var summary check.Summary
 
+	// Verify config file was loaded into Viper during Cobra sub-command initialization.
+	if configFileError != nil {
+		colorPrint(check.FAIL, fmt.Sprintf("Failed to read config file: %v\n", configFileError))
+		os.Exit(1)
+	}
+
 	def := loadConfig(nodetype)
 	in, err := ioutil.ReadFile(def)
 	if err != nil {
@@ -82,9 +88,10 @@ func runChecks(nodetype check.NodeType) {
 		exitWithError(err)
 	}
 
-	confmap := getConfigFiles(typeConf)
-	svcmap := getServiceFiles(typeConf)
-	kubeconfmap := getKubeConfigFiles(typeConf)
+	confmap := getFiles(typeConf, "config")
+	svcmap := getFiles(typeConf, "service")
+	kubeconfmap := getFiles(typeConf, "kubeconfig")
+	cafilemap := getFiles(typeConf, "ca")
 
 	// Variable substitutions. Replace all occurrences of variables in controls files.
 	s := string(in)
@@ -92,6 +99,7 @@ func runChecks(nodetype check.NodeType) {
 	s = makeSubstitutions(s, "conf", confmap)
 	s = makeSubstitutions(s, "svc", svcmap)
 	s = makeSubstitutions(s, "kubeconfig", kubeconfmap)
+	s = makeSubstitutions(s, "cafile", cafilemap)
 
 	controls, err := check.NewControls(nodetype, []byte(s))
 	if err != nil {

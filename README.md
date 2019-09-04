@@ -2,7 +2,10 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Docker image](https://images.microbadger.com/badges/image/aquasec/kube-bench.svg)](https://microbadger.com/images/aquasec/kube-bench "Get your own image badge on microbadger.com")
 [![Source commit](https://images.microbadger.com/badges/commit/aquasec/kube-bench.svg)](https://microbadger.com/images/aquasec/kube-bench)
+[![Coverage Status][cov-img]][cov]
 
+[cov-img]: https://codecov.io/github/aquasecurity/kube-bench/branch/master/graph/badge.svg
+[cov]: https://codecov.io/github/aquasecurity/kube-bench
 <img src="images/kube-bench.png" width="200" alt="kube-bench logo">
 
 kube-bench is a Go application that checks whether Kubernetes is deployed securely by running the checks documented in the [CIS Kubernetes Benchmark](https://www.cisecurity.org/benchmark/kubernetes/). 
@@ -23,7 +26,7 @@ kube-bench supports the tests for Kubernetes as defined in the CIS Benchmarks 1.
 | 1.1.0| 1.7 | 1.7 |
 | 1.2.0| 1.8 | 1.8-1.10 |
 | 1.3.0| 1.11 | 1.11-1.12 |
-| 1.4.0| 1.13 | 1.13- |
+| 1.4.1| 1.13 | 1.13- |
 
 By default kube-bench will determine the test set to run based on the Kubernetes version running on the machine.
 
@@ -37,21 +40,53 @@ You can choose to
 * install the latest binaries from the [Releases page](https://github.com/aquasecurity/kube-bench/releases),
 * compile it from source.
 
+## Running kube-bench
+
+kube-bench automatically selects which `controls` to use based on the detected
+node type and the version of kubernetes a cluster is running. This behaviour
+can be overridden by specifying the `master` or `node` subcommand and the
+`--version` flag on the command line. 
+
+The kubernetes version can also be set with the KUBE_BENCH_VERSION environment variable.
+The value of `--version` takes precedence over the value of KUBE_BENCH_VERSION.
+
+For example:
+run kube-bench against a master with version auto-detection:
+
+```
+kube-bench master
+```
+
+or run kube-bench against a node with the node `controls` for kubernetes 
+version 1.13:
+```
+kube-bench node --version 1.13
+```
+
+`controls` for the various versions of kubernetes can be found in directories
+with same name as the kubernetes versions under `cfg/`, for example `cfg/1.13`.
+`controls` are also organized by distribution under the `cfg` directory for
+example `cfg/ocp-3.10`.
+
 ### Running inside a container
 
-You can avoid installing kube-bench on the host by running it inside a container using the host PID namespace and mounting the `/etc` and `/var` directories where the configuration and other files are located on the host, so that kube-bench can check their existence and permissions.
+You can avoid installing kube-bench on the host by running it inside a container using the host PID namespace and mounting the `/etc` and `/var` directories where the configuration and other files are located on the host, so that kube-bench can check their existence and permissions. 
 
 ```
-docker run --pid=host -v /etc:/etc:ro -v /var:/var:ro -t aquasec/kube-bench:latest [master|node]
+docker run --pid=host -v /etc:/etc:ro -v /var:/var:ro -t aquasec/kube-bench:latest [master|node] --version 1.13
 ```
 
-You can even use your own configs by mounting them over the default ones in `/opt/kube-bench/cfg/`
+> Note: the tests require either the kubelet or kubectl binary in the path in order to auto-detect the Kubernetes version. You can pass `-v $(which kubectl):/usr/bin/kubectl` to resolve this. You will also need to pass in kubeconfig credentials. For example:
 
 ```
-docker run --pid=host -v /etc:/etc:ro -v /var:/var:ro -t -v path/to/my-config.yaml:/opt/kube-bench/cfg/config.yaml aquasec/kube-bench:latest [master|node]
+docker run --pid=host -v /etc:/etc:ro -v /var:/var:ro -v $(which kubectl):/usr/bin/kubectl -v ~/.kube:/.kube -e KUBECONFIG=/.kube/config -t aquasec/kube-bench:latest [master|node] 
 ```
 
-> Note: the tests require either the kubelet or kubectl binary in the path in order to auto-detect the Kubernetes version. You can pass `-v $(which kubectl):/usr/bin/kubectl` to the above invocations to resolve this.
+You can use your own configs by mounting them over the default ones in `/opt/kube-bench/cfg/`
+
+```
+docker run --pid=host -v /etc:/etc:ro -v /var:/var:ro -t -v path/to/my-config.yaml:/opt/kube-bench/cfg/config.yam -v $(which kubectl):/usr/bin/kubectl -v ~/.kube:/.kube -e KUBECONFIG=/.kube/config aquasec/kube-bench:latest [master|node]
+```
 
 ### Running in a kubernetes cluster
 
@@ -129,17 +164,6 @@ go build -o kube-bench .
 
 kube-bench includes a set of test files for Red Hat's OpenShift hardening guide for OCP 3.10 and 3.11. To run this you will need to specify `--version ocp-3.10` when you run the `kube-bench` command (either directly or through YAML). This config version is valid for OCP 3.10 and 3.11. 
 
-## Configuration
-
-Kubernetes config and binary file locations and names can vary from installation to installation, so these are configurable in the `cfg/config.yaml` file.
-
-For each type of node (*master*, *node* or *federated*) there is a list of components, and for each component there is a set of binaries (*bins*) and config files (*confs*) that kube-bench will look for (in the order they are listed). If your installation uses a different binary name or config file location for a Kubernetes component, you can add it to `cfg/config.yaml`.
-
-* **bins** - If there is a *bins* list for a component, at least one of these binaries must be running. The tests will consider the parameters for the first binary in the list found to be running.
-* **podspecs** - From version 1.2.0 of the benchmark (tests for Kubernetes 1.8), the remediation instructions were updated to assume that the configuration for several kubernetes components is defined in a pod YAML file, and podspec settings define where to look for that configuration.
-* **confs** - If one of the listed config files is found, this will be considered for the test. Tests can continue even if no config file is found. If no file is found at any of the listed locations, and a *defaultconf* location is given for the component, the test will give remediation advice using the *defaultconf* location.
-* **unitfiles** - From version 1.2.0 of the benchmark  (tests for Kubernetes 1.8), the remediation instructions were updated to assume that kubelet configuration is defined in a service file, and this setting defines where to look for that configuration.
-
 ## Output
 
 There are three output states
@@ -147,37 +171,17 @@ There are three output states
 - [WARN] means this test needs further attention, for example it is a test that needs to be run manually 
 - [INFO] is informational output that needs no further action.
 
+## Configuration
+
+Kubernetes config and binary file locations and names can vary from installation to installation, so these are configurable in the `cfg/config.yaml` file.
+
+Any settings in the version-specific config file `cfg/<version>/config.yaml` take precedence over settings in the main `cfg/config.yaml` file.
+
+You can read more about `kube-bench` configuration in our [documentation](docs/README.md#configuration-and-variables).
+
 ## Test config YAML representation
-The tests are represented as YAML documents (installed by default into ./cfg).
 
-An example is as listed below:
-```
----
-controls:
-id: 1
-text: "Master Checks"
-type: "master"
-groups:
-- id: 1.1
-  text: "Kube-apiserver"
-  checks:
-    - id: 1.1.1
-      text: "Ensure that the --allow-privileged argument is set (Scored)"
-      audit: "ps -ef | grep kube-apiserver | grep -v grep"
-      tests:
-      bin_op: or
-      test_items:
-      - flag: "--allow-privileged"
-        set: true
-      - flag: "--some-other-flag"
-        set: false
-      remediation: "Edit the /etc/kubernetes/config file on the master node and set the KUBE_ALLOW_PRIV parameter to '--allow-privileged=false'"
-      scored: true
-```
-
-Recommendations (called `checks` in this document) can run on Kubernetes Master, Node or Federated API Servers.
-Checks are organized into `groups` which share similar controls (things to check for) and are grouped together in the section of the CIS Kubernetes document.
-These groups are further organized under `controls` which can be of the type `master`, `node` or `federated apiserver` to reflect the various Kubernetes node types.
+The tests (or "controls") are represented as YAML documents (installed by default into ./cfg). There are different versions of these test YAML files reflecting different versions of the CIS Kubernetes Benchmark. You will find more information about the test file YAML definitions in our [documentation](docs/README.md).
 
 ### Omitting checks
 
@@ -192,44 +196,6 @@ If you decide that a recommendation is not appropriate for your environment, you
 ```
 
 No tests will be run for this check and the output will be marked [INFO].
-
-## Tests
-Tests are the items we actually look for to determine if a check is successful or not. Checks can have multiple tests, which must all be successful for the check to pass.
-
-The syntax for tests:
-```
-tests:
-- flag:
-  set:
-  compare:
-    op:
-    value:
-...
-```
-
-You can also define jsonpath and yamlpath tests using the following syntax:
-
-```
-tests:
-- path:
-  set:
-  compare:
-    op:
-    value:
-...
-```
-
-Tests have various `operations` which are used to compare the output of audit commands for success.
-These operations are:
-
-- `eq`: tests if the flag value is equal to the compared value.
-- `noteq`: tests if the flag value is unequal to the compared value.
-- `gt`: tests if the flag value is greater than the compared value.
-- `gte`: tests if the flag value is greater than or equal to the compared value.
-- `lt`: tests if the flag value is less than the compared value.
-- `lte`: tests if the flag value is less than or equal to the compared value.
-- `has`: tests if the flag value contains the compared value.
-- `nothave`: tests if the flag value does not contain the compared value.
 
 # Roadmap
 Going forward we plan to release updates to kube-bench to add support for new releases of the Benchmark, which in turn we can anticipate being made for each new Kubernetes release.
@@ -249,3 +215,36 @@ Next you'll have to build the kube-bench docker image using `make build-docker`,
 Finally we can use the `make kind-run` target to run the current version of kube-bench in the cluster and follow the logs of pods created. (Ctrl+C to exit)
 
 Everytime you want to test a change, you'll need to rebuild the docker image and push it to cluster before running it again. ( `make build-docker kind-push kind-run` )
+
+# GitHub Issues
+
+## Bugs
+
+If you think you have found a bug please follow the instructions below.
+
+- Please spend a small amount of time giving due diligence to the issue tracker. Your issue might be a duplicate.
+- Open a [new issue](https://github.com/aquasecurity/kube-bench/issues/new) if a duplicate doesn't already exist.
+- Note the version of kube-bench you are running (from `kube-bench version`) and the command line options you are using.
+- Note the version of kubernetes you are running (from `kubectl version` or `oc version` for Openshift).
+- Set `-v 10` command line option and save the log output. Please paste this into your issue.
+- Remember users might be searching for your issue in the future, so please give it a meaningful title to help others.
+
+## Features
+
+We also use the GitHub issue tracker to track feature requests. If you have an idea to make kube-bench even more awesome follow the steps below.
+
+- Open a [new issue](https://github.com/aquasecurity/kube-bench/issues/new).
+- Remember users might be searching for your issue in the future, so please give it a meaningful title to helps others.
+- Clearly define the use case, using concrete examples. For example: I type `this` and kube-bench does `that`.
+- If you would like to include a technical design for your feature please feel free to do so.
+
+## Pull Requests 
+
+We welcome pull requests! 
+
+- Your PR is more likely to be accepted if it focuses on just one change.
+- Please include a comment with the results before and after your change. 
+- Your PR is more likely to be accepted if it includes tests. (We have not historically been very strict about tests, but we would like to improve this!). 
+- You're welcome to submit a draft PR if you would like early feedback on an idea or an approach. 
+- Happy coding!
+
